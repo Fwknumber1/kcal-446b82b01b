@@ -182,7 +182,7 @@ const calc = (f, g) => { const x = g / 100; return { k: f.k * x, p: f.p * x, c: 
 
 function addEntry(e) { (db.entries[ui.date] ||= []).push({ id: uid(), meal: ui.meal, ...e }); save(); }
 function upsertFood(f) {
-  const { s, alt, ...clean } = f;   // s/alt are search helpers from the bundled library, not worth storing
+  const { s, a, alt, r, pop, ...clean } = f;   // search/ranking helpers from the bundled libraries, not worth storing
   const i = db.foods.findIndex(x => clean.code ? x.code === clean.code : (!x.code && x.name === clean.name && x.brand === clean.brand));
   const rec = { ...clean, id: i >= 0 ? db.foods[i].id : uid(), used: Date.now() };
   if (i >= 0) db.foods[i] = rec; else db.foods.push(rec);
@@ -201,19 +201,26 @@ let EGF = [], EGP = [], EGPcode = new Map(), USF = [];
 const norm = s => (' ' + String(s || '').toLowerCase()
   .replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
   .replace(/[^\p{L}\p{N}]+/gu, ' ')).replace(/ ال(?=\S\S)/g, ' ');
-fetch('egypt-foods.json').then(r => r.json()).then(a => { EGF = a.map(x => ({ ...x, brand: '', code: '', s: norm([x.name, x.ar, x.alt].join(' ')) })); }).catch(() => {});
+// egypt-foods.json: src 'nni' = lab values from Egypt's National Nutrition Institute tables (2006), 'est' = recipe estimates,
+// 'cc0' = open community dataset. r ranks search results: lab values first.
+const RANK = { nni: 0, est: 1, usda: 2, cc0: 3 };
+fetch('egypt-foods.json').then(r => r.json()).then(a => {
+  EGF = a.map(x => ({ ...x, brand: '', code: '', r: RANK[x.src] ?? 1, a: norm(x.ar), s: norm([x.name, x.ar, x.alt].join(' ')) }));
+}).catch(() => {});
 fetch('egypt-products.json').then(r => r.json()).then(a => {
-  EGP = a.map(([code, name, brand, k, p, c, f, sg, ar]) => ({ code, name, brand, k, p, c, f, sg, ar, s: norm([name, brand, ar].join(' ')) }));
+  EGP = a.map(([code, name, brand, k, p, c, f, sg, ar]) => ({ code, name, brand, k, p, c, f, sg, ar, a: norm(ar), s: norm([name, brand, ar].join(' ')) }));
   EGP.forEach(x => EGPcode.set(x.code, x));
 }).catch(() => {});
 // foods-common.json: USDA FNDDS "foods as eaten" (public domain), rows of [name, kcal/100g, protein, carbs, fat, serving_g, serving_label]
 fetch('foods-common.json').then(r => r.json()).then(a => {
-  USF = a.map(([name, k, p, c, f, sg, sl]) => ({ name, brand: '', code: '', k, p, c, f, sg, sl, s: norm(name) }));
+  USF = a.map(([name, k, p, c, f, sg, sl]) => ({ name, brand: '', code: '', k, p, c, f, sg, sl, src: 'usda', s: norm(name) }));
 }).catch(() => {});
 function matchLib(list, q, max) {
   const t = norm(q).split(' ').filter(Boolean); if (!t.length) return [];
   const hit = list.filter(x => t.every(w => x.s.includes(' ' + w)));   // every typed word must start a word in the name
-  hit.sort((a, b) => (b.s.startsWith(' ' + t[0]) - a.s.startsWith(' ' + t[0])) || a.name.length - b.name.length);
+  // English or Arabic name starting with the first word, then Egyptian staples, then lab values first, then shorter names
+  const w0 = ' ' + t[0], st = x => x.s.startsWith(w0) || (x.a || '').startsWith(w0);
+  hit.sort((a, b) => (st(b) - st(a)) || (b.pop | 0) - (a.pop | 0) || (a.r ?? 1) - (b.r ?? 1) || a.name.length - b.name.length);
   return hit.slice(0, max);
 }
 
@@ -291,7 +298,8 @@ function vToday() {
 
 function logBody() {
   const q = ui.q.trim(), nq = q.toLowerCase();
-  const sub = f => [f.ar && `<bdi>${esc(f.ar)}</bdi>`, f.brand && esc(f.brand), `${n0(f.k)} kcal / 100 g`].filter(Boolean).join(' · ');
+  const TAG = { nni: 'NNI lab', est: 'estimate', cc0: 'community', usda: 'USDA' };
+  const sub = f => [f.ar && `<bdi>${esc(f.ar)}</bdi>`, f.brand && esc(f.brand), `${n0(f.k)} kcal / 100 g`, TAG[f.src]].filter(Boolean).join(' · ');
   const row = (f, src, i) => `<li class="frow"><button class="fmain" data-act="open" data-src="${src}" data-i="${i}"><span class="fn">${esc(f.name)}</span><span class="mut sm">${sub(f)}</span></button>
     <button class="icb acc" data-act="quick" data-src="${src}" data-i="${i}" aria-label="Add ${esc(f.name)}">${ico('plus')}</button></li>`;
   const list = (arr, src, idx) => arr.length ? `<ul class="list">${arr.map((f, n) => row(f, src, idx ? idx[n] : n)).join('')}</ul>` : '';
@@ -299,7 +307,10 @@ function logBody() {
   const mine = db.foods.map((f, i) => ({ f, i })).sort((a, b) => b.f.used - a.f.used)
     .filter(({ f }) => !q || (f.name + ' ' + f.brand + ' ' + (f.ar || '')).toLowerCase().includes(nq)).slice(0, q ? 30 : 6);
   const mineList = list(mine.map(m => m.f), 'l', mine.map(m => m.i));
-  if (!q) return sec('Recent', mineList) + sec('Egyptian foods', list(EGF, 'f'));
+  if (!q) {   // before searching: Egyptian staples only; search reaches the whole library
+    const pops = EGF.map((f, i) => ({ f, i })).filter(o => o.f.pop);
+    return sec('Recent', mineList) + sec('Egyptian staples', list(pops.map(o => o.f), 'f', pops.map(o => o.i)));
+  }
   const found = sec('Your foods', mineList) + sec('Egyptian foods', list(matchLib(EGF, q, 10), 'e')) + sec('Egyptian products', list(matchLib(EGP, q, 15), 'p')) + sec('Common foods', list(matchLib(USF, q, 20), 'u'));
   return (found || `<p class="mut" style="padding:6px 2px">Nothing found for “${esc(q)}”. Scan its barcode, or add it by hand.</p>`) +
     `<button class="btn alt" style="width:100%" data-act="custom" data-name="${esc(q)}">Add “${esc(q)}” by hand</button>`;
@@ -324,7 +335,9 @@ function vFood() {
   const f = ui.food, v = calc(f, ui.grams);
   const unit = f.sl ? f.sl.replace(/^1\s+/, '') : 'serving';
   const chips = f.sg ? [[.5, `½ × ${unit}`], [1, `1 × ${unit}`], [2, `2 × ${unit}`]].map(([m, l]) => [f.sg * m, l]) : [[50, '50 g'], [100, '100 g'], [200, '200 g']];
-  const rough = f.conf === 'low' ? 'Rough estimate. Home recipes vary a lot, so adjust the amount.' : f.conf ? 'Estimate. Recipes and portions vary, so adjust the amount.' : '';
+  const rough = f.src === 'nni' ? 'Lab-tested by Egypt’s National Nutrition Institute (2006). Home recipes vary, so adjust the amount.'
+    : f.src === 'cc0' ? 'Community data, not lab-tested. If it looks off, check the label or use Quick add.'
+    : f.conf === 'low' ? 'Rough estimate. Home recipes vary a lot, so adjust the amount.' : f.conf ? 'Estimate. Recipes and portions vary, so adjust the amount.' : '';
   return `<div class="page">
   <header class="top"><button class="icb circ" data-act="go" data-to="${ui.back}" aria-label="Back">${ico('back', 20, 2)}</button><span class="eyebrow" style="flex:1;text-align:center">${f.code ? 'Scanned' : 'Food'}</span><span class="icb"></span></header>
   <div><h1 class="disp" style="font-size:28px;font-weight:700;line-height:1.1">${esc(f.name)}</h1>
@@ -417,7 +430,8 @@ function vProgress() {
   <details><summary>About the food data</summary>
     <p>Packaged products come from Open Food Facts, a free database made by volunteers (ODbL licence). About 1,500 Egyptian products are built in, so scanning them works offline.</p>
     <p>Common foods come from USDA FoodData Central (public domain): about 5,000 foods as people eat them, with real portion sizes.</p>
-    <p>Egyptian dishes are estimates from general nutrition data and standard recipes. They are not lab-tested, and homemade versions vary a lot. If a number looks off for your recipe, use Quick add or add the food by hand.</p></details>
+    <p>Egyptian foods (about 900): 452 lab-tested foods from Egypt’s National Nutrition Institute Food Composition Tables (2006), via a CC BY 4.0 dataset on Kaggle; about 420 home dishes and drinks in Arabic and English from an open CC0 dataset by Mohaned Maged (marked “community”, not lab-tested); and about 30 recipe estimates. Portion sizes partly from the Egyptian-Food-NLP-Calorie-Estimator project (MIT).</p>
+    <p>Homemade versions vary a lot. If a number looks off for your recipe, use Quick add or add the food by hand.</p></details>
   <details><summary>Back up your log</summary><p>Your log lives only on this phone. Copy a backup now and then, and paste it back if you ever lose the app.</p>
     <div class="grid2"><button class="btn alt" data-act="backup">Copy backup</button><button class="btn alt" data-act="restore">Restore</button></div></details></div>`;
 }
