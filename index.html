@@ -130,7 +130,7 @@ td,th{padding:5px 0;text-align:right;border-bottom:1px solid #1F221C;font-varian
 /* ---------- data ---------- */
 const KEY = 'calories.v1';
 const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
-const DEF = () => ({ goal: { kcal: 2200, p: 140, c: 240, f: 70, w: 2000 }, burn: {}, water: {}, countBurn: true, burnPct: 100, entries: {}, foods: [] });
+const DEF = () => ({ goal: { kcal: 2200, p: 140, c: 240, f: 70, w: 2000, cup: 250 }, burn: {}, water: {}, countBurn: true, burnPct: 100, entries: {}, foods: [] });
 const fill = s => ({ ...DEF(), ...s, goal: { ...DEF().goal, ...s.goal } });   // older saves lack newer keys (water)
 let db = load();
 function load() {
@@ -269,8 +269,8 @@ function vToday() {
     <div class="wat">
       <div class="mac" style="flex:1;min-width:0"><div class="row"><span class="mut">Water</span><b class="num" style="font-size:14px;white-space:nowrap">${n0(wat)}<span class="mut" style="font-weight:400"> / ${n0(g.w)} ml</span></b></div>
         <div class="trk"><i style="width:${g.w ? Math.min(100, wat / g.w * 100) : 0}%;background:var(--wat)"></i></div></div>
-      <button class="icb circ" data-act="water" data-ml="-250" aria-label="Remove 250 ml of water" ${wat ? '' : 'disabled'}>${ico('minus', 18, 2)}</button>
-      <button class="pill" data-act="water" data-ml="250" aria-label="Add a glass of water, 250 ml">+ 250 ml</button>
+      <button class="icb circ" data-act="water" data-ml="-${g.cup}" aria-label="Remove ${g.cup} ml of water" ${wat ? '' : 'disabled'}>${ico('minus', 18, 2)}</button>
+      <button class="pill" data-act="water" data-ml="${g.cup}" aria-label="Add ${g.cup} ml of water">+ ${n0(g.cup)} ml</button>
     </div>
   </section>
   <button class="link" data-act="go" data-to="activity"><span class="ic">${ico('watch')}</span>
@@ -402,7 +402,7 @@ function vProgress() {
       <text x="${W}" y="${y(g.kcal) - 4}" text-anchor="end" font-size="10" fill="#A9AC9F">Goal ${n0(g.kcal)}</text>${bars}</svg>
     <dl class="grid3 sm"><div><dt class="mut">Avg kcal</dt><dd class="num" style="font-size:18px;font-weight:600">${avg('k')}</dd></div><div><dt class="mut">Avg protein</dt><dd class="num" style="font-size:18px;font-weight:600">${avg('p')} g</dd></div><div><dt class="mut">Days logged</dt><dd class="num" style="font-size:18px;font-weight:600">${logged.length}</dd></div></dl></section>
   <form class="card" data-submit="savegoals" aria-labelledby="gh"><h2 id="gh" class="disp" style="font-size:20px">Daily goals</h2>
-    <div class="grid2"><label>Calories<input id="gk" inputmode="numeric" value="${g.kcal}"></label><label>Water ml<input id="gw" inputmode="numeric" value="${g.w}"></label></div>
+    <div class="grid3"><label>Calories<input id="gk" inputmode="numeric" value="${g.kcal}"></label><label>Water goal ml<input id="gw" inputmode="numeric" value="${g.w}"></label><label>Water per tap ml<input id="gcup" inputmode="numeric" value="${g.cup}"></label></div>
     <div class="grid3"><label>Protein g<input id="gp" inputmode="numeric" value="${g.p}"></label><label>Carbs g<input id="gc" inputmode="numeric" value="${g.c}"></label><label>Fat g<input id="gf" inputmode="numeric" value="${g.f}"></label></div>
     <button class="btn">Save goals</button></form>
   <details><summary>About the food data</summary>
@@ -572,7 +572,7 @@ const forms = {
   },
   saveburn: () => { db.burn[ui.date] = Math.round(num($('#burn').value)); save(); render(); toast('Saved'); },
   savegoals: () => {
-    db.goal = { kcal: Math.round(num($('#gk').value)) || db.goal.kcal, p: Math.round(num($('#gp').value)), c: Math.round(num($('#gc').value)), f: Math.round(num($('#gf').value)), w: Math.round(num($('#gw').value)) || db.goal.w };
+    db.goal = { kcal: Math.round(num($('#gk').value)) || db.goal.kcal, p: Math.round(num($('#gp').value)), c: Math.round(num($('#gc').value)), f: Math.round(num($('#gf').value)), w: Math.round(num($('#gw').value)) || db.goal.w, cup: Math.round(num($('#gcup').value)) || db.goal.cup };
     save(); render(); toast('Goals saved');
   },
 };
