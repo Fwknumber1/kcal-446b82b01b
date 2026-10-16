@@ -78,7 +78,7 @@ dl.sum .tot dt{color:var(--fg)}
 .trk{height:6px;border-radius:3px;background:#2A2D26}.trk i{display:block;height:6px;border-radius:3px}
 .wat{display:flex;align-items:center;gap:8px;border-top:1px solid #2A2D26;padding-top:14px}
 .pill{height:44px;padding:0 14px;border-radius:22px;background:#1C2A2E;color:var(--wat);font-size:13px;font-weight:600;white-space:nowrap}
-.link{display:flex;align-items:center;gap:14px;min-height:64px;padding:12px 16px;border-radius:20px;background:var(--card);width:100%;text-align:left}
+.link{display:flex;flex-direction:row;font-size:15px;color:var(--fg);cursor:pointer;align-items:center;gap:14px;min-height:64px;padding:12px 16px;border-radius:20px;background:var(--card);width:100%;text-align:left}
 .link .ic{width:40px;height:40px;flex:0 0 auto;border-radius:12px;background:#33231A;color:#FF8F4A;display:flex;align-items:center;justify-content:center}
 .link .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.link .t b{font-size:15px}
 .list{background:var(--card);border-radius:20px;padding:0 8px 0 16px}
@@ -125,6 +125,7 @@ td,th{padding:5px 0;text-align:right;border-bottom:1px solid #1F221C;font-varian
   <nav id="nav" aria-label="Main"></nav>
 </div>
 <div id="toast" role="status" hidden></div>
+<input id="mealphoto" class="vh" type="file" accept="image/*" aria-label="Meal photo">
 <script src="zxing-wasm.js" defer></script>
 <script defer>
 /* ---------- data ---------- */
@@ -165,12 +166,13 @@ const P = {
   back: '<path d="M15 6l-6 6 6 6"/>',
   fwd: '<path d="M9 6l6 6-6 6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
+  camera: '<path d="M4 8h3l1.5-2.5h7L17 8h3v11H4z"/><circle cx="12" cy="13.5" r="3.5"/>',
   watch: '<rect x="6" y="6" width="12" height="12" rx="3.5"/><path d="M9 6l.6-3h4.8l.6 3M9 18l.6 3h4.8l.6-3M12 9.5V12l1.5 1.2"/>',
 };
 const ico = (n, s = 22, w = 1.8) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
 
 /* ---------- state ---------- */
-const ui = { view: 'today', date: ymd(new Date()), today: ymd(new Date()), meal: autoMeal(), q: '', food: null, grams: 100, custom: null, back: 'today', confirm: null, scanMsg: '', busy: false };
+const ui = { view: 'today', date: ymd(new Date()), today: ymd(new Date()), meal: autoMeal(), q: '', food: null, grams: 100, custom: null, back: 'today', confirm: null, scanMsg: '', busy: false, snap: null };
 
 function day(date) {
   const es = db.entries[date] || [], t = { k: 0, p: 0, c: 0, f: 0 };
@@ -204,6 +206,7 @@ const norm = s => (' ' + String(s || '').toLowerCase()
 // egypt-foods.json: src 'nni' = lab values from Egypt's National Nutrition Institute tables (2006), 'est' = recipe estimates,
 // 'cc0' = open community dataset. r ranks search results: lab values first.
 const RANK = { nni: 0, est: 1, usda: 2, cc0: 3 };
+const TAG = { nni: 'NNI lab', est: 'estimate', cc0: 'community', usda: 'USDA' };
 fetch('egypt-foods.json').then(r => r.json()).then(a => {
   EGF = a.map(x => ({ ...x, brand: '', code: '', r: RANK[x.src] ?? 1, a: norm(x.ar), s: norm([x.name, x.ar, x.alt].join(' ')) }));
 }).catch(() => {});
@@ -298,7 +301,6 @@ function vToday() {
 
 function logBody() {
   const q = ui.q.trim(), nq = q.toLowerCase();
-  const TAG = { nni: 'NNI lab', est: 'estimate', cc0: 'community', usda: 'USDA' };
   const sub = f => [f.ar && `<bdi>${esc(f.ar)}</bdi>`, f.brand && esc(f.brand), `${n0(f.k)} kcal / 100 g`, TAG[f.src]].filter(Boolean).join(' · ');
   const row = (f, src, i) => `<li class="frow"><button class="fmain" data-act="open" data-src="${src}" data-i="${i}"><span class="fn">${esc(f.name)}</span><span class="mut sm">${sub(f)}</span></button>
     <button class="icb acc" data-act="quick" data-src="${src}" data-i="${i}" aria-label="Add ${esc(f.name)}">${ico('plus')}</button></li>`;
@@ -319,6 +321,8 @@ function vLog() {
   return `<div class="page">
   <header class="top"><h1 class="disp">Log food</h1><button class="icb circ" data-act="go" data-to="today" aria-label="Close">${ico('x', 18, 2)}</button></header>
   ${mealSeg()}
+  ${aiKey() ? '<label class="link" for="mealphoto">' : '<button class="link" data-act="go" data-to="progress">'}<span class="ic" style="background:#25311A;color:var(--acc)">${ico('camera')}</span>
+    <span class="t"><b>Snap your meal</b><span class="mut sm">${aiKey() ? 'Claude guesses the foods and grams' : 'Set up once: add your API key in Progress'}</span></span><span class="mut">${ico('fwd', 18, 2)}</span>${aiKey() ? '</label>' : '</button>'}
   <form data-submit="search" style="display:flex;gap:8px"><input id="q" type="search" enterkeyhint="search" placeholder="Search: koshari, كشري, Juhayna, rice…" value="${esc(ui.q)}" aria-label="Search foods" autocomplete="off">
     <button id="clr" type="button" class="icb circ" data-act="clearq" aria-label="Clear search" ${ui.q.trim() ? '' : 'hidden'}>${ico('x', 18, 2)}</button></form>
   <form class="card" data-submit="qadd" aria-labelledby="qh">
@@ -359,6 +363,26 @@ function updateFood() {
   ui.grams = g; const v = calc(f, g);
   $('#fk').textContent = n0(v.k); $('#fp').textContent = n1(v.p) + ' g'; $('#fc').textContent = n1(v.c) + ' g'; $('#ff').textContent = n1(v.f) + ' g';
   $('#fadd').textContent = `Add to ${ui.meal} · ${n0(v.k)} kcal`;
+}
+
+function vSnap() {
+  const s = ui.snap, its = s.items || [], t = snapTot(), again = '<label class="btn alt" for="mealphoto">Try another photo</label>';
+  const body = s.err ? `<p class="note">${esc(s.err)}</p>${again}`
+    : !s.items ? `<p class="mut" role="status">Looking at your meal… this takes 10 to 30 seconds.</p>`
+    : !its.length ? `<p class="note">${esc(s.note || 'No food found in this photo.')}</p>${again}`
+    : `<ul class="list">${its.map((x, i) => `<li class="frow"><div class="fmain"><span class="fn">${esc(x.name)}${x.ar ? ` · <bdi>${esc(x.ar)}</bdi>` : ''}</span>
+        <span class="mut sm">${x.tag} · <span id="sk${i}" class="num">${n0(calc(x, x.g).k)}</span> kcal</span></div>
+        <input class="sg num" data-i="${i}" inputmode="decimal" value="${n1(x.g)}" aria-label="Grams of ${esc(x.name)}" style="width:72px;height:40px;padding:0 8px"><span class="mut sm">g</span>
+        <button class="icb sm" data-act="snapdel" data-i="${i}" aria-label="Remove ${esc(x.name)}">${ico('x', 16)}</button></li>`).join('')}</ul>
+      ${s.note ? `<p class="mut sm">${esc(s.note)}</p>` : ''}
+      <section class="card" aria-label="Meal total"><div style="display:flex;align-items:baseline;gap:6px"><span id="snapk" class="kcal disp num">${n0(t.k)}</span><span class="mut">kcal</span></div>
+        <p id="snapm" class="mut sm num">P ${n0(t.p)} g · C ${n0(t.c)} g · F ${n0(t.f)} g</p>
+        <p class="mut sm">Portions from a photo are a guess and can be off by a quarter or more. Fix the grams if you know better.</p></section>
+      <div class="stack">${mealSeg()}<button id="snapadd" class="btn wide" data-act="snapadd">Add to ${ui.meal} · ${n0(t.k)} kcal</button></div>`;
+  return `<div class="page">
+  <header class="top"><button class="icb circ" data-act="go" data-to="${ui.back}" aria-label="Back">${ico('back', 20, 2)}</button><h1 class="disp">Meal photo</h1></header>
+  ${s.img ? `<img src="${s.img}" alt="Your meal" style="width:100%;max-height:240px;object-fit:cover;border-radius:20px">` : ''}
+  ${body}</div>`;
 }
 
 function vCustom() {
@@ -432,13 +456,19 @@ function vProgress() {
     <p>Common foods come from USDA FoodData Central (public domain): about 5,000 foods as people eat them, with real portion sizes.</p>
     <p>Egyptian foods (about 900): 452 lab-tested foods from Egypt’s National Nutrition Institute Food Composition Tables (2006), via a CC BY 4.0 dataset on Kaggle; about 420 home dishes and drinks in Arabic and English from an open CC0 dataset by Mohaned Maged (marked “community”, not lab-tested); and about 30 recipe estimates. Portion sizes partly from the Egyptian-Food-NLP-Calorie-Estimator project (MIT).</p>
     <p>Homemade versions vary a lot. If a number looks off for your recipe, use Quick add or add the food by hand.</p></details>
+  <details><summary>Meal photos (AI)</summary>
+    <p>Tap Snap your meal on the Log screen and Claude names each food and guesses the grams. It uses your Anthropic API credit: about 2 to 4 cents a photo.</p>
+    ${aiKey() ? `<p>Key saved on this phone: <span class="num">sk-ant-…${esc(aiKey().slice(-4))}</span></p><button class="btn alt" style="width:100%" data-act="delkey">Remove key</button>`
+      : `<ol><li>Open <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">Claude Console → API keys</a> and create a key.</li><li>Paste it here and tap Save.</li></ol>
+      <form data-submit="savekey" style="display:flex;gap:10px"><input id="aik" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="sk-ant-…" aria-label="Anthropic API key"><button class="btn">Save</button></form>`}
+    <p style="margin:12px 0 0">The key stays on this phone. It is not in your backup or on GitHub.</p></details>
   <details><summary>Back up your log</summary><p>Your log lives only on this phone. Copy a backup now and then, and paste it back if you ever lose the app.</p>
     <div class="grid2"><button class="btn alt" data-act="backup">Copy backup</button><button class="btn alt" data-act="restore">Restore</button></div></details></div>`;
 }
 
-const VIEWS = { today: vToday, log: vLog, food: vFood, custom: vCustom, scan: vScan, activity: vActivity, progress: vProgress };
+const VIEWS = { today: vToday, log: vLog, food: vFood, snap: vSnap, custom: vCustom, scan: vScan, activity: vActivity, progress: vProgress };
 const NAV = [['today', 'Today', 'home'], ['log', 'Log', 'list'], ['scan', 'Scan barcode', 'scan'], ['activity', 'Activity', 'flame'], ['progress', 'Progress', 'chart']];
-const NAV_OF = { today: 'today', log: 'log', food: 'log', custom: 'log', activity: 'activity', progress: 'progress' };
+const NAV_OF = { today: 'today', log: 'log', food: 'log', snap: 'log', custom: 'log', activity: 'activity', progress: 'progress' };
 
 function render() {
   const main = $('#view'), top = main.scrollTop;
@@ -533,7 +563,7 @@ async function readPhoto(file) {
 }
 async function onCode(code) {
   if (ui.busy) return; ui.busy = true; stopScan();
-  if (/^d{12}$/.test(code)) code = '0' + code;
+  if (/^\d{12}$/.test(code)) code = '0' + code;
   setScanMsg(`Found ${code}. Looking it up…`);
   try {
     const f = await lookup(code);
@@ -545,13 +575,93 @@ async function onCode(code) {
   } catch (e) { ui.busy = false; setScanMsg('Could not reach Open Food Facts. Check your connection and try again.', true); }
 }
 
+/* ---------- meal photo: Claude names each food and guesses grams ---------- */
+const AIKEY = 'calories.aikey';   // kept apart from the log, so a backup never carries the key
+const aiKey = () => { try { return localStorage.getItem(AIKEY) || ''; } catch (e) { return ''; } };
+const SNAP_SYSTEM = `You look at a photo of a meal for a personal calorie tracker in Egypt and estimate what is in it.
+
+List each separate food or drink you can see (bread, rice, a stew, a salad, a drink). Keep things eaten as one dish together, like koshari or a sandwich.
+
+For each item give:
+- name: a short, common English name, like "Koshari", "Aish baladi", "White rice" or "Grilled chicken breast".
+- ar: its usual Egyptian Arabic name, or "" if there is none.
+- grams: your best estimate of the edible amount in the photo. Use the plate, cutlery, hands, bread and packaging to judge size. When unsure, pick the middle of the likely range.
+- kcal, protein, carbs, fat: per 100 g of the food as served, counting the cooking oil, butter and sauce on it.
+
+If a nutrition label or package is visible, use its numbers. If there is no food or drink in the photo, return no items.
+
+note: one short sentence naming what was hardest to judge (hidden oil, a filling, the portion), or "" if nothing was.`;
+const NUM = { type: 'number' };
+const SNAP_SCHEMA = { type: 'object', additionalProperties: false, required: ['items', 'note'], properties: { note: { type: 'string' },
+  items: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['name', 'ar', 'grams', 'kcal', 'protein', 'carbs', 'fat'],
+    properties: { name: { type: 'string' }, ar: { type: 'string' }, grams: NUM, kcal: NUM, protein: NUM, carbs: NUM, fat: NUM } } } } };
+let Anthropic = null;
+// ~1,000 image tokens at 1024 px, plenty to tell foods apart
+async function photoJpeg(file, max = 1024) {
+  const url = URL.createObjectURL(file), img = new Image();
+  try {
+    await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = url; });
+    const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.85);
+  } finally { URL.revokeObjectURL(url); }
+}
+// Egyptian lab values beat a guess when Claude names a dish the NNI tables have
+const fromLib = it => {
+  const n = norm(it.name), a = norm(it.ar), hit = EGF.find(x => x.src === 'nni' && (norm(x.name) === n || (it.ar && x.a === a)));
+  return hit ? { name: hit.name, ar: hit.ar || it.ar, g: it.grams, k: hit.k, p: hit.p, c: hit.c, f: hit.f, tag: TAG.nni }
+    : { name: it.name, ar: it.ar, g: it.grams, k: it.kcal, p: it.protein, c: it.carbs, f: it.fat, tag: 'AI estimate' };
+};
+function aiError(e) {
+  const A = Anthropic;
+  if (!A || e instanceof A.APIConnectionError) return 'Could not reach Claude. Check your internet connection and try again.';
+  if (e instanceof A.AuthenticationError) return 'Claude did not accept your API key. Check it in Progress → Meal photos.';
+  if (e instanceof A.RateLimitError) return 'Too many requests right now. Wait a minute and try again.';
+  if (e instanceof A.APIError) return `Claude error ${e.status}: ${e.error?.error?.message || e.message}`;
+  return e.message || 'Could not read Claude’s answer. Try again.';
+}
+async function readMeal(file) {
+  if (!file) return;
+  if (!aiKey()) { toast('Add your API key first'); return go('progress'); }
+  if (ui.view === 'scan') stopScan();
+  if (ui.view !== 'snap') ui.back = ui.view === 'scan' ? 'log' : ui.view;
+  const run = ui.snap = { img: '', items: null, note: '', err: '' }, show = () => { if (ui.snap === run && ui.view === 'snap') render(); };
+  ui.view = 'snap'; render(); $('#view').scrollTop = 0;
+  try { run.img = await photoJpeg(file); } catch (e) { run.err = 'Could not open that photo. Try another one.'; return show(); }
+  show();
+  try {
+    Anthropic ||= (await import('https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@0.131.0/+esm')).default;
+    const client = new Anthropic({ apiKey: aiKey(), dangerouslyAllowBrowser: true });   // your own key, on your own phone
+    const r = await client.messages.create({
+      model: 'claude-opus-5-5', max_tokens: 8000, system: SNAP_SYSTEM,
+      output_config: { format: { type: 'json_schema', schema: SNAP_SCHEMA } },
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: run.img.split(',')[1] } },
+        { type: 'text', text: `Estimate this ${ui.meal.toLowerCase()}.` }] }],
+    });
+    if (r.stop_reason === 'refusal') throw new Error('Claude would not estimate this photo. Try another one.');
+    if (r.stop_reason === 'max_tokens') throw new Error('Claude’s answer was cut off. Try again.');
+    const j = JSON.parse(r.content.find(b => b.type === 'text')?.text || '{}');
+    run.items = (j.items || []).map(fromLib); run.note = j.note || '';
+  } catch (e) { run.err = aiError(e); }
+  show();
+}
+const snapTot = () => (ui.snap?.items || []).reduce((t, x) => { const v = calc(x, x.g); t.k += v.k; t.p += v.p; t.c += v.c; t.f += v.f; return t; }, { k: 0, p: 0, c: 0, f: 0 });
+function updSnap() {
+  const its = ui.snap?.items; if (!its) return;
+  its.forEach((x, i) => { const e = $('#sk' + i); if (e) e.textContent = n0(calc(x, x.g).k); });
+  const t = snapTot(), set = (id, v) => { const e = $(id); if (e) e.textContent = v; };
+  set('#snapk', n0(t.k)); set('#snapm', `P ${n0(t.p)} g · C ${n0(t.c)} g · F ${n0(t.f)} g`); set('#snapadd', `Add to ${ui.meal} · ${n0(t.k)} kcal`);
+}
+
 /* ---------- actions ---------- */
 const food = (src, i) => ({ l: () => db.foods[i], e: () => matchLib(EGF, ui.q, 10)[i], p: () => matchLib(EGP, ui.q, 15)[i], u: () => matchLib(USF, ui.q, 20)[i], f: () => EGF[i] })[src]();
 const acts = {
   go: d => go(d.to),
   day: d => { const n = addDays(ui.date, +d.d); if (n <= ui.today) { ui.date = n; ui.confirm = null; render(); } },
   add: d => { ui.meal = d.m; go('log'); },
-  meal: d => { ui.meal = d.m; document.querySelectorAll('[data-act=meal]').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === d.m)); if (ui.view === 'food') updateFood(); },
+  meal: d => { ui.meal = d.m; document.querySelectorAll('[data-act=meal]').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === d.m)); if (ui.view === 'food') updateFood(); if (ui.view === 'snap') updSnap(); },
   open: d => openFood(food(d.src, +d.i), 'log'),
   quick: d => { const f = food(d.src, +d.i); logFood(f, f.sg || 100); toast(`Added to ${ui.meal}`); go('today'); },
   grams: d => { $('#grams').value = n1(+d.g); updateFood(); },
@@ -560,6 +670,13 @@ const acts = {
     if (ui.confirm === d.id) { db.entries[ui.date] = (db.entries[ui.date] || []).filter(e => e.id !== d.id); ui.confirm = null; save(); return render(); }
     ui.confirm = d.id; render(); setTimeout(() => { if (ui.confirm === d.id) { ui.confirm = null; if (ui.view === 'today') render(); } }, 3000);
   },
+  snapdel: d => { ui.snap.items.splice(+d.i, 1); render(); },
+  snapadd: () => {
+    const its = ui.snap.items.filter(x => x.g > 0); if (!its.length) return toast('Nothing to add');
+    its.forEach(x => addEntry({ name: x.name, q: `${n1(x.g)} g · photo estimate`, ...calc(x, x.g) }));
+    ui.snap = null; toast(`Added to ${ui.meal}`); go('today');
+  },
+  delkey: () => { try { localStorage.removeItem(AIKEY); } catch (e) {} render(); toast('Key removed'); },
   clearq: () => { ui.q = ''; render(); $('#q').focus(); },
   custom: d => { ui.custom = { name: d.name || '', code: '', note: '' }; ui.back = 'log'; ui.view = 'custom'; render(); },
   rescan: () => { ui.busy = false; setScanMsg('Hold the phone 15–20 cm away so it can focus.'); startScan(); },
@@ -595,6 +712,11 @@ const forms = {
     const f = upsertFood({ code: $('#cb').value.replace(/\D/g, ''), name, brand: '', k, p: num($('#cp').value), c: num($('#cc').value), f: num($('#cf').value), sg: num($('#cs').value) });
     save(); openFood(f, 'log');
   },
+  savekey: () => {
+    const k = $('#aik').value.trim(); if (!/^sk-ant-\S{20,}$/.test(k)) return toast('That is not an Anthropic key. It starts with sk-ant-');
+    try { localStorage.setItem(AIKEY, k); } catch (e) { return toast('Could not save the key on this phone.'); }
+    render(); toast('Key saved. Snap your meal on the Log screen.');
+  },
   saveburn: () => { db.burn[ui.date] = Math.round(num($('#burn').value)); save(); render(); toast('Saved'); },
   savegoals: () => {
     db.goal = { kcal: Math.round(num($('#gk').value)) || db.goal.kcal, p: Math.round(num($('#gp').value)), c: Math.round(num($('#gc').value)), f: Math.round(num($('#gf').value)), w: Math.round(num($('#gw').value)) || db.goal.w, cup: Math.round(num($('#gcup').value)) || db.goal.cup };
@@ -605,9 +727,13 @@ document.addEventListener('click', e => { const b = e.target.closest('[data-act]
 document.addEventListener('submit', e => { e.preventDefault(); forms[e.target.dataset.submit]?.(); });
 document.addEventListener('input', e => {
   if (e.target.id === 'grams') updateFood();
+  if (e.target.classList.contains('sg')) { ui.snap.items[+e.target.dataset.i].g = num(e.target.value); updSnap(); }
   if (e.target.id === 'q') { ui.q = e.target.value; $('#results').innerHTML = logBody(); $('#clr').hidden = !ui.q.trim(); }
 });
-document.addEventListener('change', e => { if (e.target.id === 'photo') { readPhoto(e.target.files[0]); e.target.value = ''; } });
+document.addEventListener('change', e => {
+  if (e.target.id === 'photo') { readPhoto(e.target.files[0]); e.target.value = ''; }
+  if (e.target.id === 'mealphoto') { readMeal(e.target.files[0]); e.target.value = ''; }
+});
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   const t = ymd(new Date());
