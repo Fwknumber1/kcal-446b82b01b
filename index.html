@@ -15,7 +15,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600..800&family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
 <title>Calories</title>
 <style>
-:root{--bg:#0D0E0B;--card:#181A16;--card2:#22251F;--well:#0F110D;--line:#262923;--edge:#2E322A;--fg:#F3F2EC;--mut:#A9AC9F;--acc:#C8F05A;--org:#FF9F62;--blu:#7DB4FF;--yel:#F5C451;color-scheme:dark}
+:root{--bg:#0D0E0B;--card:#181A16;--card2:#22251F;--well:#0F110D;--line:#262923;--edge:#2E322A;--fg:#F3F2EC;--mut:#A9AC9F;--acc:#C8F05A;--org:#FF9F62;--blu:#7DB4FF;--yel:#F5C451;--wat:#5CCFE6;color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 .vh{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
@@ -76,6 +76,8 @@ dl.sum .tot dt{color:var(--fg)}
 .macs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
 .mac{display:flex;flex-direction:column;gap:4px;font-size:12px}
 .trk{height:6px;border-radius:3px;background:#2A2D26}.trk i{display:block;height:6px;border-radius:3px}
+.wat{display:flex;align-items:center;gap:8px;border-top:1px solid #2A2D26;padding-top:14px}
+.pill{height:44px;padding:0 14px;border-radius:22px;background:#1C2A2E;color:var(--wat);font-size:13px;font-weight:600;white-space:nowrap}
 .link{display:flex;align-items:center;gap:14px;min-height:64px;padding:12px 16px;border-radius:20px;background:var(--card);width:100%;text-align:left}
 .link .ic{width:40px;height:40px;flex:0 0 auto;border-radius:12px;background:#33231A;color:#FF8F4A;display:flex;align-items:center;justify-content:center}
 .link .t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.link .t b{font-size:15px}
@@ -128,10 +130,11 @@ td,th{padding:5px 0;text-align:right;border-bottom:1px solid #1F221C;font-varian
 /* ---------- data ---------- */
 const KEY = 'calories.v1';
 const MEALS = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
-const DEF = () => ({ goal: { kcal: 2200, p: 140, c: 240, f: 70 }, burn: {}, countBurn: true, burnPct: 100, entries: {}, foods: [] });
+const DEF = () => ({ goal: { kcal: 2200, p: 140, c: 240, f: 70, w: 2000 }, burn: {}, water: {}, countBurn: true, burnPct: 100, entries: {}, foods: [] });
+const fill = s => ({ ...DEF(), ...s, goal: { ...DEF().goal, ...s.goal } });   // older saves lack newer keys (water)
 let db = load();
 function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === 'object') return { ...DEF(), ...s }; } catch (e) {}
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && typeof s === 'object') return fill(s); } catch (e) {}
   return DEF();
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch (e) { toast('Could not save. Is storage full or blocked?'); } }
@@ -158,6 +161,7 @@ const P = {
   chart: '<path d="M4 19h16M6 16l4-5 3.5 3L19 7"/>',
   plus: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  minus: '<path d="M6 12h12"/>',
   back: '<path d="M15 6l-6 6 6 6"/>',
   fwd: '<path d="M9 6l6 6-6 6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
@@ -231,7 +235,7 @@ const dateSub = d => parseYmd(d).toLocaleDateString('en-US', { weekday: 'short',
 const mealSeg = () => `<div class="seg" role="group" aria-label="Meal">${MEALS.map(m => `<button data-act="meal" data-m="${m}" aria-pressed="${m === ui.meal}">${m}</button>`).join('')}</div>`;
 
 function vToday() {
-  const { es, t } = day(ui.date), g = db.goal, burn = db.burn[ui.date] || 0, cr = credit(ui.date);
+  const { es, t } = day(ui.date), g = db.goal, burn = db.burn[ui.date] || 0, cr = credit(ui.date), wat = db.water[ui.date] || 0;
   const budget = g.kcal + cr, left = Math.round(budget - t.k), over = left < 0, C = 326.7;
   const frac = Math.max(0, Math.min(1, budget > 0 ? t.k / budget : 0)), tone = over ? '#FF8F4A' : 'var(--acc)';
   const bar = (l, v, goal, col) => `<div class="mac"><span class="mut">${l}</span><b class="num" style="font-size:14px;white-space:nowrap">${n0(v)}<span class="mut" style="font-weight:400"> / ${n0(goal)} g</span></b><div class="trk"><i style="width:${goal ? Math.min(100, v / goal * 100) : 0}%;background:${col}"></i></div></div>`;
@@ -262,6 +266,12 @@ function vToday() {
       </dl>
     </div>
     <div class="macs">${bar('Protein', t.p, g.p, 'var(--blu)')}${bar('Carbs', t.c, g.c, 'var(--acc)')}${bar('Fat', t.f, g.f, 'var(--yel)')}</div>
+    <div class="wat">
+      <div class="mac" style="flex:1;min-width:0"><div class="row"><span class="mut">Water</span><b class="num" style="font-size:14px;white-space:nowrap">${n0(wat)}<span class="mut" style="font-weight:400"> / ${n0(g.w)} ml</span></b></div>
+        <div class="trk"><i style="width:${g.w ? Math.min(100, wat / g.w * 100) : 0}%;background:var(--wat)"></i></div></div>
+      <button class="icb circ" data-act="water" data-ml="-250" aria-label="Remove 250 ml of water" ${wat ? '' : 'disabled'}>${ico('minus', 18, 2)}</button>
+      <button class="pill" data-act="water" data-ml="250" aria-label="Add a glass of water, 250 ml">+ 250 ml</button>
+    </div>
   </section>
   <button class="link" data-act="go" data-to="activity"><span class="ic">${ico('watch')}</span>
     <span class="t"><b>${burn ? `Apple Watch: ${n0(burn)} kcal burned` : 'Add calories burned'}</b><span class="mut sm">${burn ? (db.countBurn ? `Counting ${db.burnPct}% in your budget` : 'Not counted in your budget') : 'From your Watch or typed in'}</span></span>
@@ -392,7 +402,7 @@ function vProgress() {
       <text x="${W}" y="${y(g.kcal) - 4}" text-anchor="end" font-size="10" fill="#A9AC9F">Goal ${n0(g.kcal)}</text>${bars}</svg>
     <dl class="grid3 sm"><div><dt class="mut">Avg kcal</dt><dd class="num" style="font-size:18px;font-weight:600">${avg('k')}</dd></div><div><dt class="mut">Avg protein</dt><dd class="num" style="font-size:18px;font-weight:600">${avg('p')} g</dd></div><div><dt class="mut">Days logged</dt><dd class="num" style="font-size:18px;font-weight:600">${logged.length}</dd></div></dl></section>
   <form class="card" data-submit="savegoals" aria-labelledby="gh"><h2 id="gh" class="disp" style="font-size:20px">Daily goals</h2>
-    <label>Calories<input id="gk" inputmode="numeric" value="${g.kcal}"></label>
+    <div class="grid2"><label>Calories<input id="gk" inputmode="numeric" value="${g.kcal}"></label><label>Water ml<input id="gw" inputmode="numeric" value="${g.w}"></label></div>
     <div class="grid3"><label>Protein g<input id="gp" inputmode="numeric" value="${g.p}"></label><label>Carbs g<input id="gc" inputmode="numeric" value="${g.c}"></label><label>Fat g<input id="gf" inputmode="numeric" value="${g.f}"></label></div>
     <button class="btn">Save goals</button></form>
   <details><summary>About the food data</summary>
@@ -530,6 +540,7 @@ const acts = {
   rescan: () => { ui.busy = false; setScanMsg('Hold the phone 15–20 cm away so it can focus.'); startScan(); },
   toggleburn: () => { db.countBurn = !db.countBurn; save(); render(); },
   pct: d => { db.burnPct = +d.n; save(); render(); },
+  water: d => { db.water[ui.date] = Math.max(0, (db.water[ui.date] || 0) + +d.ml); save(); render(); },
   pasteburn: async () => {
     try {
       const m = (await navigator.clipboard.readText()).match(/\d+(?:[.,]\d+)?/);
@@ -542,7 +553,7 @@ const acts = {
     try {
       const s = JSON.parse(await navigator.clipboard.readText());
       if (!s || typeof s.entries !== 'object' || !s.goal) throw 0;
-      db = { ...DEF(), ...s }; save(); render(); toast('Backup restored');
+      db = fill(s); save(); render(); toast('Backup restored');
     } catch (e) { toast('The clipboard does not hold a backup.'); }
   },
 };
@@ -561,7 +572,7 @@ const forms = {
   },
   saveburn: () => { db.burn[ui.date] = Math.round(num($('#burn').value)); save(); render(); toast('Saved'); },
   savegoals: () => {
-    db.goal = { kcal: Math.round(num($('#gk').value)) || db.goal.kcal, p: Math.round(num($('#gp').value)), c: Math.round(num($('#gc').value)), f: Math.round(num($('#gf').value)) };
+    db.goal = { kcal: Math.round(num($('#gk').value)) || db.goal.kcal, p: Math.round(num($('#gp').value)), c: Math.round(num($('#gc').value)), f: Math.round(num($('#gf').value)), w: Math.round(num($('#gw').value)) || db.goal.w };
     save(); render(); toast('Goals saved');
   },
 };
