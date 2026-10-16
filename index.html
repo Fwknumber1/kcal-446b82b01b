@@ -196,17 +196,24 @@ function logFood(f, g) {
 /* ---------- Egyptian library (bundled, works offline) ---------- */
 // egypt-foods.json: everyday dishes. egypt-products.json: packaged products from Open Food Facts, rows of
 // [code, name, brand, kcal/100g, protein, carbs, fat, serving_g, arabic_name].
-let EGF = [], EGP = [], EGPcode = new Map();
-const norm = s => String(s || '').toLowerCase().replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه');
+let EGF = [], EGP = [], EGPcode = new Map(), USF = [];
+// words only (leading space each), Arabic letter variants folded, article "ال" dropped so "الكشري" finds "كشري"
+const norm = s => (' ' + String(s || '').toLowerCase()
+  .replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')).replace(/ ال(?=\S\S)/g, ' ');
 fetch('egypt-foods.json').then(r => r.json()).then(a => { EGF = a.map(x => ({ ...x, brand: '', code: '', s: norm([x.name, x.ar, x.alt].join(' ')) })); }).catch(() => {});
 fetch('egypt-products.json').then(r => r.json()).then(a => {
   EGP = a.map(([code, name, brand, k, p, c, f, sg, ar]) => ({ code, name, brand, k, p, c, f, sg, ar, s: norm([name, brand, ar].join(' ')) }));
   EGP.forEach(x => EGPcode.set(x.code, x));
 }).catch(() => {});
+// foods-common.json: USDA FNDDS "foods as eaten" (public domain), rows of [name, kcal/100g, protein, carbs, fat, serving_g, serving_label]
+fetch('foods-common.json').then(r => r.json()).then(a => {
+  USF = a.map(([name, k, p, c, f, sg, sl]) => ({ name, brand: '', code: '', k, p, c, f, sg, sl, s: norm(name) }));
+}).catch(() => {});
 function matchLib(list, q, max) {
-  const t = norm(q).split(/\s+/).filter(Boolean); if (!t.length) return [];
-  const hit = list.filter(x => t.every(w => x.s.includes(w)));
-  hit.sort((a, b) => (b.s.startsWith(t[0]) - a.s.startsWith(t[0])) || a.name.length - b.name.length);
+  const t = norm(q).split(' ').filter(Boolean); if (!t.length) return [];
+  const hit = list.filter(x => t.every(w => x.s.includes(' ' + w)));   // every typed word must start a word in the name
+  hit.sort((a, b) => (b.s.startsWith(' ' + t[0]) - a.s.startsWith(' ' + t[0])) || a.name.length - b.name.length);
   return hit.slice(0, max);
 }
 
@@ -227,7 +234,9 @@ async function lookup(code) {
   const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=code,product_name,product_name_en,product_name_ar,brands,nutriments,serving_quantity`, { signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error('http ' + r.status);
   const j = await r.json();
-  return j.status === 1 && j.product ? mapProduct({ ...j.product, code }) : null;
+  if (j.status !== 1 || !j.product) return null;
+  // known product without calorie data: keep its name so the add-by-hand form starts filled in
+  return mapProduct({ ...j.product, code }) || { partial: true, name: (j.product.product_name || j.product.product_name_en || j.product.product_name_ar || '').trim() };
 }
 /* ---------- views ---------- */
 const dateTitle = d => d === ui.today ? 'Today' : d === addDays(ui.today, -1) ? 'Yesterday' : parseYmd(d).toLocaleDateString('en-US', { weekday: 'long' });
@@ -291,7 +300,7 @@ function logBody() {
     .filter(({ f }) => !q || (f.name + ' ' + f.brand + ' ' + (f.ar || '')).toLowerCase().includes(nq)).slice(0, q ? 30 : 6);
   const mineList = list(mine.map(m => m.f), 'l', mine.map(m => m.i));
   if (!q) return sec('Recent', mineList) + sec('Egyptian foods', list(EGF, 'f'));
-  const found = sec('Your foods', mineList) + sec('Egyptian foods', list(matchLib(EGF, q, 10), 'e')) + sec('Egyptian products', list(matchLib(EGP, q, 15), 'p'));
+  const found = sec('Your foods', mineList) + sec('Egyptian foods', list(matchLib(EGF, q, 10), 'e')) + sec('Egyptian products', list(matchLib(EGP, q, 15), 'p')) + sec('Common foods', list(matchLib(USF, q, 20), 'u'));
   return (found || `<p class="mut" style="padding:6px 2px">Nothing found for “${esc(q)}”. Scan its barcode, or add it by hand.</p>`) +
     `<button class="btn alt" style="width:100%" data-act="custom" data-name="${esc(q)}">Add “${esc(q)}” by hand</button>`;
 }
@@ -299,7 +308,7 @@ function vLog() {
   return `<div class="page">
   <header class="top"><h1 class="disp">Log food</h1><button class="icb circ" data-act="go" data-to="today" aria-label="Close">${ico('x', 18, 2)}</button></header>
   ${mealSeg()}
-  <form data-submit="search" style="display:flex;gap:8px"><input id="q" type="search" enterkeyhint="search" placeholder="Search: koshari, كشري, Juhayna…" value="${esc(ui.q)}" aria-label="Search foods" autocomplete="off">
+  <form data-submit="search" style="display:flex;gap:8px"><input id="q" type="search" enterkeyhint="search" placeholder="Search: koshari, كشري, Juhayna, rice…" value="${esc(ui.q)}" aria-label="Search foods" autocomplete="off">
     <button id="clr" type="button" class="icb circ" data-act="clearq" aria-label="Clear search" ${ui.q.trim() ? '' : 'hidden'}>${ico('x', 18, 2)}</button></form>
   <form class="card" data-submit="qadd" aria-labelledby="qh">
     <div class="row"><h2 id="qh" class="disp" style="font-size:20px">Quick add</h2><span class="mut sm">Just the numbers</span></div>
@@ -407,6 +416,7 @@ function vProgress() {
     <button class="btn">Save goals</button></form>
   <details><summary>About the food data</summary>
     <p>Packaged products come from Open Food Facts, a free database made by volunteers (ODbL licence). About 1,500 Egyptian products are built in, so scanning them works offline.</p>
+    <p>Common foods come from USDA FoodData Central (public domain): about 5,000 foods as people eat them, with real portion sizes.</p>
     <p>Egyptian dishes are estimates from general nutrition data and standard recipes. They are not lab-tested, and homemade versions vary a lot. If a number looks off for your recipe, use Quick add or add the food by hand.</p></details>
   <details><summary>Back up your log</summary><p>Your log lives only on this phone. Copy a backup now and then, and paste it back if you ever lose the app.</p>
     <div class="grid2"><button class="btn alt" data-act="backup">Copy backup</button><button class="btn alt" data-act="restore">Restore</button></div></details></div>`;
@@ -514,14 +524,15 @@ async function onCode(code) {
   try {
     const f = await lookup(code);
     if (ui.view !== 'scan') return;
-    if (f) return openFood(f, ui.back);
-    ui.custom = { code, name: '', note: 'Not in Open Food Facts yet, or it has no calorie data. Enter it once from the label and it is saved for next time.' };
+    if (f && !f.partial) return openFood(f, ui.back);
+    ui.custom = f ? { code, name: f.name, note: 'Open Food Facts knows this product but has no calories for it. Enter them once from the label and it is saved for next time.' }
+      : { code, name: '', note: 'Not in Open Food Facts yet. Enter it once from the label and it is saved for next time.' };
     ui.view = 'custom'; render();
   } catch (e) { ui.busy = false; setScanMsg('Could not reach Open Food Facts. Check your connection and try again.', true); }
 }
 
 /* ---------- actions ---------- */
-const food = (src, i) => ({ l: () => db.foods[i], e: () => matchLib(EGF, ui.q, 10)[i], p: () => matchLib(EGP, ui.q, 15)[i], f: () => EGF[i] })[src]();
+const food = (src, i) => ({ l: () => db.foods[i], e: () => matchLib(EGF, ui.q, 10)[i], p: () => matchLib(EGP, ui.q, 15)[i], u: () => matchLib(USF, ui.q, 20)[i], f: () => EGF[i] })[src]();
 const acts = {
   go: d => go(d.to),
   day: d => { const n = addDays(ui.date, +d.d); if (n <= ui.today) { ui.date = n; ui.confirm = null; render(); } },
